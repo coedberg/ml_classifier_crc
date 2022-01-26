@@ -1,0 +1,23 @@
+# Combine fastq files
+find /srv/MA/users/alau15/2021-11-10-ab/lib1/20211110_1457_X1_FAQ30317_ba89bbea/ -type f -name "*.fastq" -exec cat {} + > reads.fq
+
+#Generate barcode file for Cutadapt from nextamp barcodes
+bash format_barcodes.sh
+
+# Demultiplex with cutadapt
+cutadapt \
+ -e 0.2 \
+ -O 11 \
+ -g file:barcodes_used.fa \
+ -o demultiplex/{name}.fastq \
+ -j 20 \
+ reads.fq
+ 
+ # Demultiplex with cutadapt strict
+cutadapt \
+ -e 0.15 \
+ -O 12 \
+ -g file:barcodes_used.fa \
+ -o demultiplex2/{name}.fastq \
+ -j 20 \
+ reads.fq
