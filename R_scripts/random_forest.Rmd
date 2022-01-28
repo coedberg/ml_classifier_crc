@@ -1,0 +1,114 @@
+---
+title: "Random Forest"
+author: "A. Berg"
+date: "10/1/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir ="C:/Users/Berg/Documents/R/ML_pred_CRC")
+knitr::opts_knit$set(set.dir ="C:/Users/Berg/Documents/R/ML_pred_CRC")
+knitr::opts_chunk$set(dev = "png",
+                      dpi = 600,
+                      echo = FALSE,
+                      cache = TRUE,
+                      warning= F, 
+                      results='hide')
+
+
+deps = c("tictoc","readr","readxl","knitr","rmarkdown","tidyverse","broom", "furrr", 
+         "future.apply", "caret", "mikropml", "cowplot", 
+         "MLeval", "RColorBrewer", "ampvis2", "dplyr", "stringr", "writexl");
+
+for (dep in deps){
+  if (dep %in% installed.packages()[,"Package"] == FALSE){
+    install.packages(as.character(dep), quiet=TRUE);}
+  
+library(dep, verbose=FALSE, character.only=TRUE)}
+
+
+```
+
+#Load Data
+```{r}
+set.seed(42)
+source("code/load_data.R") 
+
+
+```
+
+
+
+### Random Forest ###
+
+## Feature Selection
+Evaluate the number of features necessary for RF to work:
+
+```{r, Feature Selection}
+
+source("code/RF/rf_feature_selection.R") 
+
+rf_feature_plot
+
+
+
+```
+
+
+## Hyperparameter tuning to final model
+Tune the mtry parameter, the number of trees is predefined to 500
+1) rough tune of 7, sqrt(183), 28 and 183
+2) fine tune of 10-30, and a secon fine tune of the top 5 values 
+3) final model with mtry =
+
+all trains are repeated cross validation of 5-fold 10-CV in a seed loop of a 100
+```{r, Hyperparameter tuning}
+
+source("code/RF/rf_hptuning2.R")
+
+rf_mtry_tune
+
+```
+
+
+
+## Internal Validation
+
+```{r, Internal Validation}
+
+source("code/RF/rf_internal_validation.R") 
+
+```
+
+
+## External Validation
+
+```{r, External Validation}
+#load data
+
+source("code/load_externalvalidation_data.R") 
+
+
+source("code/RF/rf_external_validation.R") 
+```
+
+
+## Robustness test: Other disease 
+
+```{r, Robustness test: Other disease }
+source("code/RF/rf_robust_disease.R") 
+
+
+```
+
+
+## Robustness test: Other sequencing method
+
+```{r, Robustness test: Other sequencing method}
+source("code/RF/rf_robust_seq.R") 
+
+
+```
+
+
+

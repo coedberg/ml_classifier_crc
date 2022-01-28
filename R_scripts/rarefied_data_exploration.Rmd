@@ -1,0 +1,500 @@
+---
+title: "ml_model_build"
+author: "A. Berg"
+date: "15/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir ="C:/Users/Berg/Documents/R/ML_pred_CRC")
+knitr::opts_knit$set(set.dir ="C:/Users/Berg/Documents/R/ML_pred_CRC")
+knitr::opts_chunk$set(dev = "png",
+                      dpi = 600,
+                      echo = FALSE,
+                      cache = TRUE,
+                      warning= F, 
+                      results='hide')
+
+deps = c("tictoc","readr","readxl","knitr","rmarkdown","tidyverse","broom", "furrr", 
+         "UpSetR", "cowplot", "RColorBrewer", "ampvis2", "dplyr", "stringr", "ggplotify", "MicrobiotaProcess");
+for (dep in deps){
+  if (dep %in% installed.packages()[,"Package"] == FALSE){
+    install.packages(as.character(dep), quiet=TRUE);
+  }
+  library(dep, verbose=FALSE, character.only=TRUE)
+}
+
+
+```
+
+```{r, set color scheme for graphs}
+display.brewer.all()
+display.brewer.pal(n = 8, name = 'Set1')
+brewer.pal(n = 8, name = 'Set1')
+
+
+colour_cancer <- "#E41A1C"
+colour_healthy <- "#377EB8"
+```
+
+
+
+
+### Load Model Data 
+```{r, load model data}
+
+source("code/load_data.R")
+
+```
+
+
+### Quality control
+```{r, quality control}
+
+# rarefaction quality control assessing error rates
+
+#prepare ampvis2 object
+otu <-  t(otu_wide)
+otu <-  cbind(rownames(otu), data.frame(otu, row.names=NULL))
+otu[1,1] = "otu"
+colnames(otu) <- otu[1,]
+otutable <- otu[-1, ] 
+
+otu_table <-  merge(taxonomy, otutable, by="otu") 
+otu_table[, 1:8] <- sapply(otu_table[, 1:8], as.character)
+otu_table[, 9:552] <- sapply(otu_table[, 9:552], as.numeric)  
+otu_table <- otu_table %>% 
+  select(-("taxonomy"))
+
+
+d <- amp_load(otutable = otu_table,
+              metadata = metadata)
+
+# Create Rarefaction Curve
+#Rarefaction curve shows the number of reads in relation to the number of OTUs in the samples.
+rarecurve<- amp_rarecurve(
+  d,
+  stepsize = 1000,
+  color_by = "dx",
+  facet_by = NULL, #"dx",
+  facet_scales = "fixed") +
+  geom_vline(xintercept=10000, color = "grey50", lty = 2)+
+  labs(x="Number of Reads", y="Number of Observed OTUs")+
+  scale_x_continuous(breaks = c(0, 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000), limits = c(0, 80000))+ 
+  scale_color_discrete(breaks=c()) +
+  theme_classic()+
+  scale_color_brewer(palette = "Set1")+
+  theme(legend.title = element_blank(),
+        legend.position= c(0.9, 0.15))
+
+rarecurve
+ggsave(plot = rarecurve, filename = "rarecurve.jpeg",
+       path = "C:/Users/Berg/Desktop/Thesis/Results/Rare/",
+       dpi = 600, width = 15, height = 10, units = "cm")
+
+
+test <- as.data.frame(rarecurve[["data"]])
+
+aggregate(Species ~ dx, test, mean)
+
+#cancer has mean of 29891 reads, and normal only 25747
+#cancer has mean of 263 OTUs, and normal 255 OTUs
+
+test <- as.data.frame(sd_rare[["metadata"]][["dx"]])
+colnames(test) <- "dx"
+test %>% 
+  filter(dx == "normal")
+
+#cancer = 120 samples, normal = 176 samples 
+
+```
+
+
+
+### Explorative Analysis
+```{r, Species Richness and Evenness}
+
+obj = amp_alphadiv(sd_rare, richness = T)
+
+ace <- ggplot(obj, aes(dx, ACE, fill = dx)) +
+  geom_boxplot(alpha=0.8,width = 0.5)+
+  scale_fill_brewer(palette="Set1")+
+  xlab("Abundance-based\nCoverage Estimator")+
+  ylab("")+
+  theme_classic()+
+  theme(legend.position='none')+
+  scale_y_continuous(limits = c(0, 700))
+  
+ootu <- ggplot(obj, aes(dx, ObservedOTUs, fill = dx)) + 
+  geom_boxplot(alpha=0.8,width = 0.5)+
+  scale_fill_brewer(palette="Set1")+
+  xlab("Observed OTUs\n")+
+  ylab("")+
+  theme_classic()+
+  theme(legend.position='none')+
+  scale_y_continuous(limits = c(0, 700))
+
+esn <- ggplot(obj, aes(dx, Shannon, fill = dx)) + 
+  geom_boxplot(alpha=0.8,width = 0.5)+
+  scale_fill_brewer(palette="Set1")+
+  xlab("Effective\nShannon number")+
+  ylab("")+
+  theme_classic()+
+  theme(legend.position='none')+
+  scale_y_continuous(limits = c(0, 5))
+
+sre <- plot_grid(ootu, ace, esn,
+                 ncol = 3,
+                 labels = c('A', 'B', 'C'))
+
+sre
+ggsave(plot = sre, filename = "sre.jpeg",
+       path = "C:/Users/Berg/Desktop/Thesis/Results/Rare/",
+       dpi = 600, width = 15, height = 5, units = "cm")
+```
+
+
+
+```{r, Ordination plots}
+
+PCA <- amp_ordinate(
+  sd_rare,
+  filter_species = 0.1,
+  type = "PCA",
+  distmeasure = "bray",
+  transform = "hellinger",
+  x_axis = 1,
+  y_axis = 2,
+  sample_color_by = "dx",
+  sample_color_order = c("cancer", "normal"),
+  sample_colorframe = TRUE,
+  sample_point_size = 1,
+  opacity = 0.8,
+  detailed_output = FALSE)+
+  scale_fill_brewer(palette="Set1")+
+  scale_color_brewer(palette="Set1")+
+  theme_classic()+
+  theme(legend.position = "none",
+        legend.title = element_blank())+
+  scale_x_continuous(limits = c(-1,1),
+                   breaks = c(seq(-1,1, by = 0.25)))+
+  scale_y_continuous(limits = c(-1,1),
+                     breaks = c(seq(-1,1, by = 0.25)))+
+  geom_vline(xintercept = 0, color = "grey50", lty = 2, size = 0.1)+
+  geom_hline(yintercept = 0, color = "grey50", lty = 2, size = 0.1)
+
+RDA <- amp_ordinate(
+  sd_rare,
+  filter_species = 0.1,
+  type = "RDA",
+  distmeasure = "bray",
+  transform = "hellinger",
+  constrain = "dx",
+  x_axis = 1,
+  y_axis = 2,
+  sample_color_by = "dx",
+  sample_color_order = c("cancer", "normal"),
+  sample_colorframe = TRUE,
+  sample_point_size = 1,
+  opacity = 0.8,
+  detailed_output = FALSE)+
+  scale_fill_brewer(palette="Set1")+
+  scale_color_brewer(palette="Set1")+
+  theme_classic()+
+  theme(legend.position = "none",
+        legend.title = element_blank())+
+  scale_x_continuous(limits = c(-1,1),
+                   breaks = c(seq(-1,1, by = 0.25)))+
+  scale_y_continuous(limits = c(-1,1),
+                     breaks = c(seq(-1,1, by = 0.25)))+
+  geom_vline(xintercept = 0, color = "grey50", lty = 2, size = 0.1)+
+  geom_hline(yintercept = 0, color = "grey50", lty = 2, size = 0.1)
+
+legend <- get_legend(
+  RDA + 
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "top"))
+
+ordination <- plot_grid(PCA, RDA,
+          ncol = 2,
+          labels = c('A', 'B'))
+
+ordinates <- plot_grid(ordination, legend, ncol = 1,
+          rel_heights = c(1, .1))
+
+
+ggsave(plot = ordinates, filename = "ordination.jpeg",
+       path = "C:/Users/Berg/Desktop/Thesis/Results/Rare/",
+       dpi = 600, width = 20, height = 10, units = "cm")
+
+
+PCA_scree <- amp_ordinate(
+  sd_rare,
+  filter_species = 0.1,
+  type = "PCA",
+  distmeasure = "bray",
+  transform = "hellinger",
+  constrain = NULL,
+  x_axis = 1,
+  y_axis = 2,
+  print_caption = FALSE,
+  sample_color_by = "dx",
+  sample_color_order = c("cancer", "normal"),
+  sample_colorframe = TRUE,
+  sample_colorframe_label_size = 3,
+  sample_label_size = 4,
+  sample_point_size = 2,
+  species_plot = TRUE,
+  species_nlabels = 0,
+  species_label_taxonomy = "Genus",
+  species_label_size = 3,
+  species_rescale = FALSE,
+  species_point_size = 2,
+  species_shape = 20,
+  repel_labels = TRUE,
+  opacity = 0.8,
+  tax_empty = "best",
+  detailed_output = TRUE)
+
+PCA_scree$screeplot
+
+ggsave(plot = PCA_scree$screeplot, filename = "scree.jpeg",
+       path = "C:/Users/Berg/Desktop/Thesis/Results/Rare/",
+       dpi = 600, width = 15, height = 5, units = "cm")
+
+```
+
+
+
+
+ 
+```{r, Significant genera - wilcox test with BH}
+
+df_genera <- df_rare %>% pivot_longer(-c(dx, seq_id), names_to="genus", values_to="rel_abund")
+
+df_sig_genera <- df_genera %>% 
+  nest(data = -genus) %>% 
+  mutate(test = map(.x=data, ~wilcox.test(rel_abund~dx, data=.x) %>% tidy)) %>%
+  unnest(test) %>% 
+  mutate(p.adjust = p.adjust(p.value, method="BH")) %>% #bonferroni or BH 
+  arrange(p.adjust) %>% 
+  filter(p.adjust < 0.05) %>%
+  select(genus, p.adjust)
+
+
+df_sig_genera <- inner_join(df_sig_genera, df_genera, by = "genus") %>% 
+  mutate(rel_abund = as.double(rel_abund),
+         genus = fct_reorder(genus, rel_abund))
+df_sig_genera$dx <- factor(df_sig_genera$dx , levels = rev(levels(df_sig_genera$dx)))
+df_sig_genera$rel_abund <- df_sig_genera$rel_abund * 100
+
+
+significant_genera <- ggplot(df_sig_genera, aes(x=rel_abund, y=genus, color = dx))+
+  geom_boxplot()+
+  geom_jitter(position = position_jitterdodge(),
+              alpha = 0.1) +
+  scale_x_log10(breaks = scales::trans_breaks("log10", function(x) 10^x),
+                labels = scales::trans_format("log10", scales::math_format(10^.x))) +
+  labs(x= "Relative abundance (%)", y=NULL) +
+  theme_classic()+
+  scale_color_brewer(palette = "Set1",
+                     direction=-1)+
+  theme(legend.background = element_rect(fill = "white"),
+        legend.title = element_blank()) +
+  theme(plot.tag.position = "topleft",
+        legend.position = c(0.9, 0.9))+
+  guides(color = guide_legend(reverse = TRUE))
+
+
+significant_genera
+
+ggsave(plot = significant_genera, filename = "sig_gen.jpeg",
+       path = "C:/Users/Berg/Desktop/Thesis/Results/Rare/",
+       dpi = 600, width = 15, height = 10, units = "cm")
+
+
+
+
+
+
+```
+
+
+
+
+
+```{r, UpSet plot }
+
+sample_df_normal <- md %>% 
+  select(seq_id, dx) %>% 
+  filter(dx == "normal")
+
+
+sample_df_cancer <- md %>% 
+  select(seq_id, dx) %>% 
+  filter(dx == "cancer") 
+
+
+sample_df_cancer_split <- sample_df_cancer %>% 
+  group_split(group_id = row_number() %/% 40)
+
+sample_df_normal_split <- sample_df_normal %>% 
+  group_split(group_id = row_number() %/% 40)
+
+
+
+sample_df_normal_split_A <- as.data.frame(sample_df_normal_split[[1]]) %>% 
+  mutate(subsample = "normal_A") %>% 
+  select(-group_id) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="seq_id")
+
+sample_df_normal_split_B <- as.data.frame(sample_df_normal_split[[2]]) %>% 
+  mutate(subsample = "normal_B") %>% 
+  select(-group_id) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="seq_id")
+
+sample_df_normal_split_C <- as.data.frame(sample_df_normal_split[[3]]) %>% 
+  mutate(subsample = "normal_C") %>% 
+  select(-group_id) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="seq_id")
+
+sample_df_normal_split_D <- as.data.frame(sample_df_normal_split[[4]]) %>% 
+  mutate(subsample = "normal_D") %>% 
+  select(-group_id) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="seq_id")
+
+
+
+sample_df_cancer_split_A <- as.data.frame(sample_df_cancer_split[[1]]) %>% 
+  mutate(subsample = "cancer_A") %>% 
+  select(-group_id) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="seq_id")
+
+sample_df_cancer_split_B <- as.data.frame(sample_df_cancer_split[[2]]) %>% 
+  mutate(subsample = "cancer_B") %>% 
+  select(-group_id) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="seq_id")
+
+sample_df_cancer_split_C <- as.data.frame(sample_df_cancer_split[[3]]) %>% 
+  mutate(subsample = "cancer_C") %>% 
+  select(-group_id) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="seq_id")
+
+
+sample_df_comb <- rbind(sample_df_cancer_split_A,
+                        sample_df_cancer_split_B,
+                        sample_df_cancer_split_C,
+                        sample_df_normal_split_A,
+                        sample_df_normal_split_B,
+                        sample_df_normal_split_C,
+                        sample_df_normal_split_D) 
+
+
+otu_df <- inner_join(otu_wide, md, by = "seq_id") %>% 
+  filter(dx == "normal" | dx == "cancer") %>% 
+  select(seq_id, everything(), -c(bases, age, bmi, gender, dx)) %>% 
+  remove_rownames %>% 
+  column_to_rownames(var="seq_id")
+
+upsetdata <- get_upset(obj = otu_df, 
+                       sampleda = sample_df_comb, 
+                       factorNames = "subsample")
+
+
+upset_plot <- upset(upsetdata, sets=c("cancer_C",
+                        "cancer_B",
+                        "cancer_A",
+                        "normal_D",
+                        "normal_C",
+                        "normal_B",
+                        "normal_A"),
+      order.by = "freq", empty.intersections = "on", 
+      sets.bar.color= c("#E41A1C", "#E41A1C", "#E41A1C", "#377EB8", "#377EB8", "#377EB8", "#377EB8"),
+      mainbar.y.label = "Number of OTUs",
+      sets.x.label = "Total number of OTUs",
+      number.angles = 0,
+      group.by = "degree",
+      nintersects = 20,
+      keep.order = TRUE)
+
+jpeg(file="upset.jpeg",
+     width = 25, height = 15, units = "cm", res = 600) # or other device
+upset_plot
+dev.off()
+
+```
+
+
+
+### Visualise how much data is removed in zv and nzv
+```{r}
+
+dim_nzv_strict <- dim(nzv_strict)
+dim_nzv <- dim(nzv_df)
+dim_zv <- dim(zv_df)
+dim_df <- dim(df_noid)
+
+
+  name <- c("Strict Near Zero Variance",
+            "Conservative Near Zero Variance",
+            "Zero Variance",
+            "All Features")
+  value <-c(dim_nzv_strict[2], dim_nzv[2], dim_zv[2], dim_df[2])
+  
+  bar <- data.frame(name, value)
+
+num_features <- ggplot(bar, aes(x=name, y=value, fill=name)) +
+    geom_bar(stat="identity")+theme_minimal()+
+    scale_x_discrete(limits=rev(name))+
+    coord_flip()+
+    theme_classic()+
+    scale_fill_manual(values= c("#4DAF4A", "#FF7F00", "#377EB8", "#E41A1C"))+
+    theme(legend.position = "none")+
+    labs(y="Number of features", x = "")+
+    scale_y_discrete(limits= c(seq(0,450, by = 50)))+
+    geom_hline(yintercept=c(30, 183, 396), color = "black", lty = 2)
+
+ggsave(plot = num_features, filename = "num_features.jpeg",
+       path = "C:/Users/Berg/Desktop/Thesis/Results/Rare/",
+       dpi = 600, width = 15, height = 5, units = "cm")
+
+```
+
+
+
+### 
+```{r}
+
+rf_feature_plot
+svm_feature_plot
+xgb_feature_plot
+
+
+features <- plot_grid(rf_feature_plot, xgb_feature_plot,  svm_feature_plot,
+          ncol = 3,
+          labels = c('A', 'B', 'C'))
+features
+
+ggsave(plot = features, filename = "features.jpeg",
+       path = "C:/Users/Berg/Desktop/Thesis/Results/Rare/",
+       dpi = 600, width = 30, height = 20, units = "cm")
+```
+
+
+### 
+```{r}
+
+
+
+```
+
+
+
+

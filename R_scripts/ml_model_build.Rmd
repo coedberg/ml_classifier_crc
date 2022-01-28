@@ -1,0 +1,255 @@
+---
+title: "ml_model_build"
+author: "A. Berg"
+date: "15/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir ="C:/Users/Berg/Documents/R/ML_pred_CRC")
+knitr::opts_knit$set(set.dir ="C:/Users/Berg/Documents/R/ML_pred_CRC")
+knitr::opts_chunk$set(dev = "png",
+                      dpi = 600,
+                      echo = FALSE,
+                      cache = TRUE,
+                      warning= F, 
+                      results='hide')
+
+deps = c("tictoc","readr","readxl","knitr","rmarkdown","tidyverse","broom", "furrr", 
+         "future.apply", "caret", "mikropml", "UpSetR", "cowplot", 
+         "MLeval", "MicrobiotaProcess", "e1071", "RColorBrewer", "ampvis2", "dplyr", "stringr", "naivebayes", "writexl");
+for (dep in deps){
+  if (dep %in% installed.packages()[,"Package"] == FALSE){
+    install.packages(as.character(dep), quiet=TRUE);
+  }
+  library(dep, verbose=FALSE, character.only=TRUE)
+}
+
+
+```
+
+```{r, set color scheme for graphs}
+display.brewer.all()
+display.brewer.pal(n = 8, name = 'Set1')
+brewer.pal(n = 8, name = 'Set1')
+
+
+colour_cancer <- "#E41A1C"
+colour_healthy <- "#377EB8"
+```
+
+
+
+
+### Load Model Data
+```{r, load model data}
+
+source("code/ml_modelling/load_model_data.R") #1min
+
+head(otu_long, n = 5)
+head(otu_wide, n = c(5, 5))
+head(taxonomy, n = 5)
+head(metadata, n = 6)
+
+```
+
+
+### Quality Control
+```{r, quality control}
+
+#takes 2 min
+
+source("code/ml_modelling/quality_control.R")
+
+rarecurve
+head(df, n = c(5,5))
+
+
+```
+
+
+
+### Explorative Analysis
+```{r}
+
+#takes 1 min
+source("code/ml_modelling/explorative_analysis.R")
+
+
+#Species Richness and Evenness 
+plot_grid(ootu + ace + esn)
+
+#Relative Abundances Heatmaps
+heatmap_phylum_10
+
+heatmap_genus_15
+
+
+#Ordinates
+PCA
+PCA_scree
+RDA
+
+#Rank abundance plot
+#rankabundance
+
+#Core communities
+#core_community
+
+
+#Most abundant OTUs and significant genera
+#box_genus_10
+significant_genera 
+
+
+#Upsetplot
+upset_plot
+
+
+
+
+
+```
+
+
+### Preprocessing Data
+```{r}
+### Internal Validation - Data split
+set.seed(42)
+
+#Random samples
+df_validation <- sample_n(df, 50)
+
+
+#update dataframe - exculde validation dataset
+df <- anti_join(df, df_validation, by = "seq_id")
+
+
+
+# 4sec
+
+tic()
+source("code/ml_modelling/preprocessing.R")
+toc()
+
+
+num_features
+
+```
+
+
+
+
+### External Model Validation - Load data
+```{r}
+
+source("code/ml_validation/load_external_validation.R")
+
+exval_rarecurve
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### Internal Model Validation - Model Performances
+```{r}
+
+#test on df_validation
+#rf
+internal_pred_rf_res
+prop.table(confusionMatrix(data = internal_pred_rf$pred, reference = internal_pred_rf$obs)$table)
+
+
+#xgb
+internal_pred_xgb_res
+prop.table(confusionMatrix(data = internal_pred_xgb$pred, reference = internal_pred_xgb$obs)$table)
+
+#svm
+internal_pred_svm_res
+prop.table(confusionMatrix(data = internal_pred_svm$pred, reference = internal_pred_svm$obs)$table)
+
+
+
+
+```
+
+
+
+### External Model Validation - Load data
+```{r}
+
+source("code/ml_validation/load_external_validation.R")
+
+exval_rarecurve
+
+```
+
+
+
+### External Model Validation - Model Accuracy and Brier-Score
+```{r}
+
+#test on external cohort
+
+```
+
+
+
+
+### Robust Model Validation - Load data
+```{r}
+
+source("code/ml_robustness/load_data.R")
+
+head(otu_long, n = 5)
+head(otu_wide, n = c(5, 5))
+head(taxonomy, n = 5)
+head(metadata, n = 6)
+
+```
+
+
+
+
